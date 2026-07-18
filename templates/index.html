@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ArmGPT — Natural Language Robot Control</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>□</text></svg>">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/boxicons/2.1.0/dist/boxicons.js" integrity="sha512-Dm5UxqUSgNd93XG7eseoOrScyM1BVs65GrwmavP0D0DujOA8mjiBfyj71wmI2VQZKnnZQsSWWsxDKNiQIqk8sQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ─────────────────────────────  sessions  ───────────────────────────── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <div class="brand">
+        <span class="brand-mark"><box-icon name='bot' color='currentColor' size='sm'></box-icon></span>
+        <div>
+          <div class="brand-name">ArmGPT</div>
+          <div class="brand-sub">natural language → motion</div>
+        </div>
+      </div>
+      <button class="icon-btn" id="collapseSidebar" title="Hide sidebar">‹</button>
+    </div>
+
+    <button class="new-chat" id="newChat">
+      <box-icon name='plus' color='currentColor' size='sm'></box-icon> New chat
+    </button>
+
+    <div class="session-list" id="sessionList"></div>
+
+    <div class="sidebar-foot">
+      <div class="status-grid" id="statusGrid">
+        <div class="status-row" data-key="llm">
+          <span class="dot" data-state="unknown"></span>
+          <span class="status-label">Model</span>
+          <span class="status-value" id="statusLlm">…</span>
+        </div>
+        <div class="status-row" data-key="camera">
+          <span class="dot" data-state="unknown"></span>
+          <span class="status-label">Camera</span>
+          <span class="status-value" id="statusCamera">…</span>
+        </div>
+        <div class="status-row" data-key="robot">
+          <span class="dot" data-state="unknown"></span>
+          <span class="status-label">Robot</span>
+          <span class="status-value" id="statusRobot">…</span>
+        </div>
+        <div class="status-row" data-key="mongo">
+          <span class="dot" data-state="unknown"></span>
+          <span class="status-label">History</span>
+          <span class="status-value" id="statusMongo">…</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ───────────────────────────────  chat  ─────────────────────────────── -->
+  <main class="chat">
+    <header class="chat-head">
+      <button class="icon-btn ghost" id="showSidebar" title="Show sidebar"><box-icon name='menu' color='currentColor' size='sm'></box-icon></button>
+      <div class="chat-title" id="chatTitle">New chat</div>
+      <button class="icon-btn ghost" id="toggleVision" title="Toggle camera panel"><box-icon name='camera' color='currentColor' size='sm'></box-icon></button>
+    </header>
+
+    <div class="messages" id="messages">
+      <div class="welcome" id="welcome">
+        <div class="welcome-mark"><box-icon name='bot' color='currentColor' size='60px'></box-icon></div>
+        <h1>Tell the arm what to do</h1>
+        <p>I'll parse your command with a local LLM, find the objects with the
+           overhead camera, and send the pixel coordinates to the controller.</p>
+        <div class="suggestions">
+          <button class="suggestion" data-q="place the red object on the blue plate">
+            <strong>place the red object on the blue plate</strong>
+            <span>pick &amp; place by color</span>
+          </button>
+          <button class="suggestion" data-q="where is the cup?">
+            <strong>where is the cup?</strong>
+            <span>locate a COCO object</span>
+          </button>
+          <button class="suggestion" data-q="how many circles do you see?">
+            <strong>how many circles do you see?</strong>
+            <span>count by shape</span>
+          </button>
+          <button class="suggestion" data-q="pick up marker 3 and put it on the green block">
+            <strong>pick up marker 3 and put it on the green block</strong>
+            <span>ArUco → color</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="composer-wrap">
+      <form class="composer" id="composer" autocomplete="off">
+        <textarea id="input" rows="1" placeholder="Tell the arm what to do…"
+                  spellcheck="false"></textarea>
+        <button type="submit" class="send" id="send" title="Send (Enter)">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path fill="currentColor" d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z"/>
+          </svg>
+        </button>
+      </form>
+      <div class="composer-hint">
+        <span id="hintText">Enter to send · Shift+Enter for a new line</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- ──────────────────────────────  vision  ────────────────────────────── -->
+  <aside class="vision" id="vision">
+    <div class="vision-tabs" role="tablist">
+      <button class="vtab active" data-tab="camera" role="tab">Camera</button>
+      <button class="vtab" data-tab="robot" role="tab">
+        Robot TCP <span class="tab-dot" id="tabDot" data-state="unknown"></span>
+      </button>
+    </div>
+
+    <!-- ── camera pane ── -->
+    <div class="vpane" id="pane-camera">
+      <div class="vision-head">
+        <span class="vision-title">Live feed</span>
+        <span class="live-pill"><span class="live-dot"></span>LIVE</span>
+      </div>
+
+      <div class="video-frame">
+        <img id="videoFeed" alt="Live camera feed">
+        <div class="video-fallback" id="videoFallback">Connecting to camera…</div>
+      </div>
+
+      <div class="vision-section">
+        <div class="log-head">
+          <label class="field-label" for="cameraSource" style="margin:0">Camera source</label>
+          <button class="link-btn" id="refreshCams">rescan</button>
+        </div>
+        <select id="cameraSource">
+          <option value="">Detecting…</option>
+        </select>
+        <p class="field-note" id="cameraNote">
+          Windows numbers cameras unpredictably. If this is the wrong feed, pick
+          another — the picture updates in a second or two.
+        </p>
+      </div>
+
+      <div class="vision-section">
+        <label class="field-label" for="previewMode">Preview overlay</label>
+        <select id="previewMode">
+          <option value="none">Raw feed (no detector)</option>
+        </select>
+        <p class="field-note" id="previewNote">
+          The chat picks its own detector per command. This only changes what you
+          see here.
+        </p>
+      </div>
+
+      <div class="vision-section params" id="paramsPanel"></div>
+    </div>
+
+    <!-- ── robot pane ── -->
+    <div class="vpane" id="pane-robot" hidden>
+      <div class="vision-section">
+        <div class="conn-banner" id="connBanner" data-state="unknown">
+          <span class="conn-dot"></span>
+          <span id="connText">Checking…</span>
+        </div>
+
+        <label class="field-label" for="robotMode">Connection mode</label>
+        <select id="robotMode" class="full">
+          <option value="server">Server — ArmGPT listens</option>
+          <option value="client">Client — ArmGPT dials out to a controller</option>
+        </select>
+
+        <label class="field-label" for="robotHost" style="margin-top:14px">
+          <span id="addrLabel">Listen address</span>
+        </label>
+        <div class="addr-row">
+          <input type="text" id="robotHost" placeholder="127.0.0.1"
+                 spellcheck="false" autocomplete="off">
+          <span class="addr-sep">:</span>
+          <input type="number" id="robotPort" min="1" max="65535"
+                 placeholder="5000">
+        </div>
+
+        <div id="timeoutWrap" hidden>
+          <label class="field-label" for="robotTimeout"
+                 style="margin-top:14px">Connect timeout (s)</label>
+          <input type="number" id="robotTimeout" min="1" max="60" class="full">
+        </div>
+
+        <div class="btn-row">
+          <button class="btn" id="testConn">Check server</button>
+          <button class="btn primary" id="saveConn">Save</button>
+        </div>
+        <p class="field-note" id="connNote">
+          ArmGPT is listening. Point Hercules (TCP Client) at this address and
+          hit Connect, then send a command below.
+        </p>
+
+        <div class="client-list" id="clientList" hidden></div>
+      </div>
+
+      <div class="vision-section">
+        <label class="field-label">Send mode</label>
+        <label class="switch" for="dryRun">
+          <input type="checkbox" id="dryRun">
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span class="switch-label">
+            <strong id="dryRunTitle">Dry run</strong>
+            <em id="dryRunSub">Commands are formatted and logged, never sent.</em>
+          </span>
+        </label>
+        <div class="warn-box" id="liveWarn" hidden>
+          Live mode — an accepted command will physically move the arm.
+        </div>
+      </div>
+
+      <div class="vision-section">
+        <label class="field-label">Wire format</label>
+        <pre class="wire">PICKPLACE,src_u,src_v,dst_u,dst_v
+LOCATE,u,v</pre>
+        <p class="field-note">
+          Pixel coordinates only. The controller does the calibration and IK.
+        </p>
+      </div>
+
+      <div class="vision-section">
+        <label class="field-label" for="manualLine">Manual command</label>
+        <div class="send-row">
+          <input type="text" id="manualLine" spellcheck="false"
+                 autocomplete="off" placeholder="LOCATE,640,360">
+          <button class="btn" id="manualSend">Send</button>
+        </div>
+        <p class="field-note" id="manualNote">
+          Bypasses the LLM and the camera. Broadcasts to connected clients.
+          Obeys the dry-run switch above.
+        </p>
+      </div>
+
+      <div class="vision-section">
+        <div class="log-head">
+          <label class="field-label" style="margin:0">Traffic</label>
+          <button class="link-btn" id="clearLog">clear</button>
+        </div>
+        <div class="log" id="trafficLog">
+          <div class="params-empty">Nothing sent yet.</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

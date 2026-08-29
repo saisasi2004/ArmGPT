@@ -1,4 +1,4 @@
-# ArmGPT — pinned dependencies (all open-source, no paid APIs)
+# ArmGPT - pinned dependencies (all open-source, no paid APIs)
 # Python 3.10–3.12 (mediapipe has no 3.13 wheels yet). Verified on 3.11.
 numpy==1.26.4            # <2 required by this mediapipe release
 opencv-python==4.10.0.84 # includes cv2.aruco since 4.7 (no contrib build needed)

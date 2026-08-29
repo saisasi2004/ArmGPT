@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ArmGPT — Natural Language Robot Control</title>
+  <title>ArmGPT - Natural Language Robot Control</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>□</text></svg>">
@@ -133,14 +133,17 @@
       <div class="vision-section">
         <div class="log-head">
           <label class="field-label" for="cameraSource" style="margin:0">Camera source</label>
-          <button class="link-btn" id="refreshCams">rescan</button>
+          <span>
+            <button class="link-btn" id="retryCam" hidden>retry</button>
+            <button class="link-btn" id="refreshCams">rescan</button>
+          </span>
         </div>
         <select id="cameraSource">
           <option value="">Detecting…</option>
         </select>
         <p class="field-note" id="cameraNote">
           Windows numbers cameras unpredictably. If this is the wrong feed, pick
-          another — the picture updates in a second or two.
+          another - the picture updates in a second or two.
         </p>
       </div>
 
@@ -168,8 +171,8 @@
 
         <label class="field-label" for="robotMode">Connection mode</label>
         <select id="robotMode" class="full">
-          <option value="server">Server — ArmGPT listens</option>
-          <option value="client">Client — ArmGPT dials out to a controller</option>
+          <option value="server">Server - ArmGPT listens</option>
+          <option value="client">Client - ArmGPT dials out to a controller</option>
         </select>
 
         <label class="field-label" for="robotHost" style="margin-top:14px">
@@ -212,7 +215,7 @@
           </span>
         </label>
         <div class="warn-box" id="liveWarn" hidden>
-          Live mode — an accepted command will physically move the arm.
+          Live mode - an accepted command will physically move the arm.
         </div>
       </div>
 

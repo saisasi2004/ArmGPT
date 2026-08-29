@@ -49,7 +49,7 @@ def draw_detection(frame: np.ndarray, det: Detection,
                    color: tuple[int, int, int], highlight: bool = False) -> None:
     """Draw one detection: bbox, centroid dot + coords, label (+confidence).
 
-    `highlight` thickens the box and switches to the accent color — used to
+    `highlight` thickens the box and switches to the accent color - used to
     mark the detection actually chosen as a pick or place point.
     """
     if highlight:

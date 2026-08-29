@@ -2,7 +2,7 @@
 
 Closed-vocabulary: only the 80 COCO classes. `match` is filtered against the
 class name after inference, so "pick up the cup" works but "pick up the
-widget" will not — that needs the open-vocabulary path (Grounding DINO)
+widget" will not - that needs the open-vocabulary path (Grounding DINO)
 noted in the project plan.
 """
 from __future__ import annotations
@@ -21,7 +21,7 @@ _LOCAL_WEIGHTS = Path(__file__).resolve().parents[1] / "yolov8n.pt"
 def _weights_path() -> str:
     if _LOCAL_WEIGHTS.exists():
         return str(_LOCAL_WEIGHTS)
-    return "yolov8n.pt"  # not there — let ultralytics download it
+    return "yolov8n.pt"  # not there - let ultralytics download it
 
 
 class ObjectDetector(BaseDetector):

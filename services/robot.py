@@ -1,12 +1,12 @@
 """TCP link to the robot controller. Two modes, switchable at runtime.
 
-    server  (default) — ArmGPT LISTENS. The controller (or Hercules, for
+    server  (default) - ArmGPT LISTENS. The controller (or Hercules, for
                         testing) connects in as a client, and each command is
                         broadcast to every connected client.
-    client            — ArmGPT DIALS OUT to a controller that is itself a
+    client            - ArmGPT DIALS OUT to a controller that is itself a
                         listening TCP server, one short connection per command.
 
-Either way this layer sends *pixel* coordinates only — the controller owns
+Either way this layer sends *pixel* coordinates only - the controller owns
 hand-eye calibration and inverse kinematics.
 
 Wire format: one CSV line per command, newline-terminated.
@@ -80,7 +80,7 @@ class _TcpServer:
             s.settimeout(1.0)
         except OSError as exc:
             self._error = f"{type(exc).__name__}: {exc}"
-            log.error("robot server: bind %s:%s failed — %s", host, port,
+            log.error("robot server: bind %s:%s failed - %s", host, port,
                       self._error)
             try:
                 s.close()
@@ -160,7 +160,7 @@ class _TcpServer:
         """Drop clients that have closed since the last send.
 
         We never read from client sockets during normal operation, so a
-        disconnect (TCP FIN) goes unnoticed until the next broadcast fails —
+        disconnect (TCP FIN) goes unnoticed until the next broadcast fails -
         which would leave the UI claiming a client is connected when Hercules
         has already hit Disconnect. select() finds readable sockets; a readable
         socket that peeks empty has been closed by the peer.
@@ -298,7 +298,7 @@ def _persist(current: dict) -> None:
 
 
 def load_persisted() -> None:
-    """Restore saved settings at startup. Env vars still win — an explicit
+    """Restore saved settings at startup. Env vars still win - an explicit
     ARMGPT_ROBOT_* in the environment should not be silently overridden by
     something typed into the UI three weeks ago. Does NOT start the server;
     call apply_mode() after this."""
@@ -335,7 +335,7 @@ def format_locate(point: tuple[int, int]) -> str:
 def send(line: str) -> dict:
     """Send one preformatted CSV line. Returns a transcript-friendly record.
 
-    Never raises on a delivery failure — the failure is reported in the
+    Never raises on a delivery failure - the failure is reported in the
     returned dict so the chat can surface it as a message instead of a 500.
     """
     cfg = get_settings()
@@ -364,7 +364,7 @@ def send(line: str) -> dict:
         record["clients"] = total
         record["sent"] = delivered > 0
         if total == 0:
-            record["error"] = ("No client connected — nothing received the "
+            record["error"] = ("No client connected - nothing received the "
                                "command. Connect the controller (or Hercules) "
                                f"to {cfg['host']}:{cfg['port']} first.")
         elif delivered < total:

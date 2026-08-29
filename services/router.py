@@ -4,11 +4,11 @@ This is the stage that decides whether a command actually reaches the arm. It
 refuses in three cases, and each refusal is a normal chat reply rather than an
 error:
 
-  not_found  — the detector saw nothing matching. Nothing to send.
-  ambiguous  — several things matched. Ask which one instead of guessing;
+  not_found  - the detector saw nothing matching. Nothing to send.
+  ambiguous  - several things matched. Ask which one instead of guessing;
                silently picking one is how you get the arm grabbing the wrong
                object.
-  blocked    — a hand is in frame. See the safety note on the interlock below.
+  blocked    - a hand is in frame. See the safety note on the interlock below.
 """
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ def _run_detector(key: str, match: str | None,
     detector = detectors.get(key)
     with detectors.lock():
         detector.prepare(match)
-        # Motion is differential — one frame gives it nothing to compare
+        # Motion is differential - one frame gives it nothing to compare
         # against, so prime it with the current frame before the real read.
         if key == "motion":
             detector.detect(frame)
@@ -78,7 +78,7 @@ def _resolve_slot(slot: dict, frame: np.ndarray) -> SlotResult:
 def _safety_block(frame: np.ndarray) -> str | None:
     """Refuse arm motion while a hand is visible.
 
-    NOT a safety-rated interlock — MediaPipe misses hands, and a missed hand
+    NOT a safety-rated interlock - MediaPipe misses hands, and a missed hand
     here means the arm moves anyway. It is a convenience check on top of the
     cell's real safety system, never a replacement for one. Fails open (with a
     logged warning) if mediapipe isn't installed, because a hard dependency on
@@ -89,10 +89,10 @@ def _safety_block(frame: np.ndarray) -> str | None:
     try:
         hands, _ = _run_detector("presence", "hand", frame)
     except detectors.DetectorUnavailable as exc:
-        log.warning("safety check skipped — %s", exc)
+        log.warning("safety check skipped - %s", exc)
         return None
     except Exception as exc:
-        log.warning("safety check errored, skipping — %s", exc)
+        log.warning("safety check errored, skipping - %s", exc)
         return None
     if hands:
         return (f"I can see a hand in the workspace, so I'm not moving the arm. "
@@ -124,7 +124,7 @@ def _describe(dets: list[Detection]) -> str:
 def handle(message: str, session_id: str) -> dict:
     """Full pipeline for one user message. Never raises: every failure comes
     back as a chat reply with a `status` the UI can style."""
-    # Read history BEFORE persisting this turn — otherwise the message the
+    # Read history BEFORE persisting this turn - otherwise the message the
     # model is being asked to parse also shows up in its own context.
     history = store.recent_turns(session_id, count=6)
     store.add_message(session_id, "user", message)
@@ -143,7 +143,7 @@ def _reply(text: str, status: str, **extra) -> dict:
 
 
 def _handle(message: str, history: list[dict]) -> dict:
-    # 1 — parse
+    # 1 - parse
     try:
         intent = llm.parse_intent(message, history)
     except llm.LLMError as exc:
@@ -159,7 +159,7 @@ def _handle(message: str, history: list[dict]) -> dict:
             return _reply(intent["note"], "ok", **base)
         return _reply(llm.reply_for_chat(message, history), "ok", **base)
 
-    # 2 — one frame drives the whole command, so source and target are
+    # 2 - one frame drives the whole command, so source and target are
     # guaranteed to come from the same instant.
     frame = camera.wait_for_frame(timeout=5)
     if frame is None:
@@ -180,12 +180,12 @@ def _handle(message: str, history: list[dict]) -> dict:
     }
     ordered = list(results.values())
 
-    # 3 — detector-level failures
+    # 3 - detector-level failures
     for r in results.values():
         if r.error:
             return _reply(r.error, "error", **base)
 
-    # 4 — nothing found
+    # 4 - nothing found
     missing = [n for n, r in results.items() if not r.candidates]
     if missing:
         names = " and ".join(llm.describe(results[n].slot) for n in missing)
@@ -194,7 +194,7 @@ def _handle(message: str, history: list[dict]) -> dict:
             f"Check it's on the table and not occluded, then ask again.",
             "not_found", snapshot=_snapshot(frame, ordered, message), **base)
 
-    # 5 — count is answerable now; no motion, no disambiguation needed
+    # 5 - count is answerable now; no motion, no disambiguation needed
     if intent["action"] == "count":
         dets = results["source"].candidates
         noun = llm.describe(results["source"].slot)
@@ -203,7 +203,7 @@ def _handle(message: str, history: list[dict]) -> dict:
             f"I can see {len(dets)} {plural}: {_describe(dets)}.", "ok",
             snapshot=_snapshot(frame, ordered, message), **base)
 
-    # 6 — ambiguity. Ask rather than guess.
+    # 6 - ambiguity. Ask rather than guess.
     ambiguous = [n for n, r in results.items() if len(r.candidates) > 1]
     if ambiguous:
         lines = []
@@ -214,10 +214,10 @@ def _handle(message: str, history: list[dict]) -> dict:
         return _reply(
             "I need you to narrow that down before I move the arm.\n\n"
             + "\n".join(lines)
-            + "\n\nTell me which one — by position, or move the others out of frame.",
+            + "\n\nTell me which one - by position, or move the others out of frame.",
             "ambiguous", snapshot=_snapshot(frame, ordered, message), **base)
 
-    # 7 — locate: report and stop
+    # 7 - locate: report and stop
     if intent["action"] == "locate":
         det = results["source"].chosen
         payload = robot.format_locate(det.centroid)
@@ -229,10 +229,10 @@ def _handle(message: str, history: list[dict]) -> dict:
             reply, "ok",
             snapshot=_snapshot(frame, ordered, message),
             robot={"line": payload.rstrip(), "sent": False,
-                   "note": "locate is read-only — nothing sent to the arm"},
+                   "note": "locate is read-only - nothing sent to the arm"},
             **base)
 
-    # 8 — pick_place: safety, then send
+    # 8 - pick_place: safety, then send
     blocked = _safety_block(frame)
     if blocked:
         return _reply(blocked, "blocked",
@@ -248,14 +248,14 @@ def _handle(message: str, history: list[dict]) -> dict:
 
     if record["error"]:
         return _reply(
-            f"I found both objects — {src_name} at "
+            f"I found both objects - {src_name} at "
             f"({src.centroid[0]}, {src.centroid[1]}) and {dst_name} at "
-            f"({dst.centroid[0]}, {dst.centroid[1]}) — but couldn't reach the "
+            f"({dst.centroid[0]}, {dst.centroid[1]}) - but couldn't reach the "
             f"controller at {record['host']}:{record['port']}.\n\n{record['error']}",
             "error", snapshot=_snapshot(frame, ordered, message), **base)
 
     verb = "Would send" if record["dry_run"] else "Sent"
-    tail = " (dry run — no socket opened)" if record["dry_run"] else ""
+    tail = " (dry run - no socket opened)" if record["dry_run"] else ""
     reply = (f"Picking up the {src_name} and placing it on the {dst_name}.\n\n"
              f"Pick ({src.centroid[0]}, {src.centroid[1]}) → "
              f"place ({dst.centroid[0]}, {dst.centroid[1]}).\n"

@@ -84,7 +84,7 @@ _STATIC_META: dict[str, dict] = {
     "color": {
         "name": "Color",
         "hint": "HSV thresholding. match = one of: red, green, blue, yellow, "
-                "orange, purple. For objects identified by color — this is the "
+                "orange, purple. For objects identified by color - this is the "
                 "usual choice for pick-and-place.",
     },
     "shapes": {

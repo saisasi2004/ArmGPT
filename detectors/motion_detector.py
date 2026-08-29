@@ -1,7 +1,7 @@
 """Motion detection: frame-differencing boxes and dense optical flow.
 
 Stateful across frames (it needs a previous frame to difference against), so
-one-shot use from a chat command is inherently weak — the router warms it up
+one-shot use from a chat command is inherently weak - the router warms it up
 with a couple of frames first. Primarily a live-preview mode.
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ ARROW_STEP = 24   # px between drawn flow vectors
 class MotionDetector(BaseDetector):
     NAME = "Motion"
     BOX_COLOR = (0, 0, 255)  # red
-    MATCH_HINT = ("no match value — returns every moving region. Use for "
+    MATCH_HINT = ("no match value - returns every moving region. Use for "
                   "\"is anything moving?\".")
     PARAM_SPEC = [
         {"key": "mode", "label": "Method", "type": "combo",

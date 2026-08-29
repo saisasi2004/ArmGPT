@@ -3,7 +3,7 @@
 Two design choices worth knowing:
 
 1. The JSON schema is passed to Ollama's `format` parameter, which constrains
-   token sampling. The model *cannot* emit invalid JSON — we don't rely on
+   token sampling. The model *cannot* emit invalid JSON - we don't rely on
    prompt instructions and then hope.
 
 2. Thinking is disabled by default (config.LLM_THINK). Qwen3 is a hybrid
@@ -16,6 +16,7 @@ import copy
 import json
 import logging
 import re
+import threading
 import time
 
 import requests
@@ -34,12 +35,12 @@ ACTIONS = ["pick_place", "locate", "count", "chat"]
 # 1. Property ORDER. The schema compiles to a grammar that emits keys in this
 #    order, so whatever comes first is decided with nothing else on the page.
 #    `action` used to be first, and the 4B model would guess "chat" for any
-#    question and then fill the rest to match — 5/8 on the eval set.
+#    question and then fill the rest to match - 5/8 on the eval set.
 #    `needs_camera` is one cheap token that forces the distinction it was
 #    getting wrong, and `action` is now conditioned on having answered it.
 #
 # 2. Every field costs ~150ms. Generation runs at ~6.4 tok/s on this CPU, so
-#    the schema is exactly what the router cannot derive itself — nothing more.
+#    the schema is exactly what the router cannot derive itself - nothing more.
 #    `description` and `reply` used to live here and account for ~60 of 105
 #    output tokens (~9s per command) despite the router overwriting the reply
 #    on almost every path. Both are gone; see reply_for_chat() for the one
@@ -84,7 +85,7 @@ def _forced_camera_schema() -> dict:
 # Kept deliberately terse. Every prompt token is re-evaluated on each call
 # (~4.6s for the 1200-token version this replaced), so anything that doesn't
 # change an output is pure latency. The needs_camera rule and the "match is a
-# single value, not a phrase" rule stay verbose on purpose — those are the two
+# single value, not a phrase" rule stay verbose on purpose - those are the two
 # the model actually gets wrong when they aren't spelled out.
 SYSTEM_PROMPT = """Parse commands for ArmGPT, a SCARA robot arm with an \
 overhead camera. Output structured intent only. Never invent coordinates.
@@ -105,7 +106,7 @@ DETECTORS:
 "the big red block" -> detector=color, match="red".
 
 COLOUR WINS. If the phrase contains a colour word, detector=color and
-match=<the colour> — even when the noun sounds like an object:
+match=<the colour> - even when the noun sounds like an object:
   "blue plate"  -> color/blue   NOT objects/plate
   "green block" -> color/green  NOT objects/block
 `objects` is ONLY for the COCO class list above, with no colour word present.
@@ -147,6 +148,24 @@ def system_prompt() -> str:
 # ------------------------------------------------------------------- model
 _resolved_model: str | None = None
 
+# One Ollama generation at a time, process-wide.
+#
+# Not an optimisation - a correctness fix. Ollama loads a separate copy of the
+# model per concurrent slot, so a chat command arriving while the startup
+# warmup is still loading asks a 16GB box to hold two copies of a ~3.4GB model
+# plus torch and mediapipe. What comes back is a bare `500 Internal Server
+# Error` from /api/chat, roughly 120s later, with nothing in the log to
+# explain it. Serialising means the second caller waits for the load the first
+# one is already paying for - which is what it wanted anyway.
+_call_lock = threading.Lock()
+
+# /api/status is polled every few seconds by the open page, and status() used
+# to hit Ollama twice per poll (tags + a forced re-resolve). On a box where
+# Ollama is mid-generation on the CPU, that is not free.
+_STATUS_TTL_S = 5.0
+_status_cache: tuple[float, dict] | None = None
+_status_lock = threading.Lock()
+
 
 def available_models() -> list[str]:
     try:
@@ -185,7 +204,7 @@ def resolve_model(force: bool = False) -> str:
             f"Run: ollama pull {config.LLM_MODEL_PREFERENCES[0]}"
         )
 
-    # Only on an actual change — status() re-resolves every few seconds and
+    # Only on an actual change - status() re-resolves every few seconds and
     # would otherwise fill the log with identical lines.
     if _resolved_model != previous:
         log.info("Using LLM model: %s", _resolved_model)
@@ -202,37 +221,57 @@ def warmup() -> None:
     try:
         model = resolve_model()
     except LLMError as exc:
-        log.warning("warmup skipped — %s", exc)
+        log.warning("warmup skipped - %s", exc)
         return
     started = time.perf_counter()
     try:
-        requests.post(f"{config.OLLAMA_HOST}/api/chat", timeout=300, json={
-            "model": model,
-            "messages": [{"role": "system", "content": system_prompt()},
-                         {"role": "user", "content": "hello"}],
-            "stream": False,
-            "think": config.LLM_THINK,
-            "keep_alive": config.LLM_KEEP_ALIVE,
-            "options": {"num_predict": 1},
-        }).raise_for_status()
+        # Takes _call_lock like every other generation, so a command typed
+        # during startup queues behind this load instead of triggering a
+        # second one.
+        with _call_lock:
+            resp = requests.post(f"{config.OLLAMA_HOST}/api/chat", timeout=300,
+                                 json={
+                "model": model,
+                "messages": [{"role": "system", "content": system_prompt()},
+                             {"role": "user", "content": "hello"}],
+                "stream": False,
+                "think": config.LLM_THINK,
+                "keep_alive": config.LLM_KEEP_ALIVE,
+                "options": {"num_predict": 1, "num_ctx": config.LLM_NUM_CTX},
+            })
+            resp.raise_for_status()
         log.info("%s warm in %.0fs (keep_alive=%s)", model,
                  time.perf_counter() - started, config.LLM_KEEP_ALIVE)
     except Exception as exc:
-        log.warning("warmup failed (first command will be slow): %s", exc)
+        log.warning("warmup failed, so the first command will pay the model "
+                    "load: %s", exc)
 
 
 def status() -> dict:
+    """Snapshot for the sidebar. Cached for a few seconds - see _STATUS_TTL_S."""
+    global _status_cache
+    with _status_lock:
+        if _status_cache and (time.monotonic() - _status_cache[0]) < _STATUS_TTL_S:
+            return _status_cache[1]
+
     try:
         installed = available_models()
     except LLMError as exc:
-        return {"ok": False, "error": str(exc), "model": None, "installed": []}
-    try:
-        model = resolve_model(force=True)
-    except LLMError as exc:
-        return {"ok": False, "error": str(exc), "model": None,
-                "installed": installed}
-    return {"ok": True, "error": None, "model": model, "installed": installed,
-            "thinking": config.LLM_THINK}
+        result = {"ok": False, "error": str(exc), "model": None,
+                  "installed": []}
+    else:
+        try:
+            model = resolve_model(force=True)
+        except LLMError as exc:
+            result = {"ok": False, "error": str(exc), "model": None,
+                      "installed": installed}
+        else:
+            result = {"ok": True, "error": None, "model": model,
+                      "installed": installed, "thinking": config.LLM_THINK}
+
+    with _status_lock:
+        _status_cache = (time.monotonic(), result)
+    return result
 
 
 # ------------------------------------------------------------------ parsing
@@ -240,7 +279,7 @@ def parse_intent(message: str, history: list[dict] | None = None) -> dict:
     """Turn a user message into a validated intent dict.
 
     Two calls at most. The second only happens when the model contradicts
-    itself — it answers needs_camera=true (which it gets right essentially
+    itself - it answers needs_camera=true (which it gets right essentially
     every time) and then picks action=chat anyway, leaving source null so
     there is nothing to repair locally. Re-asking with `chat` removed from the
     grammar resolves it. On a CPU-bound box the retry costs real seconds, so
@@ -255,7 +294,7 @@ def parse_intent(message: str, history: list[dict] | None = None) -> dict:
     intent = _call(model, messages, INTENT_SCHEMA)
 
     if intent.get("needs_camera") and intent.get("action") == "chat":
-        log.info("needs_camera=true but action=chat — retrying without 'chat'")
+        log.info("needs_camera=true but action=chat - retrying without 'chat'")
         retry = _call(model, messages, _forced_camera_schema())
         retry["needs_camera"] = True
         intent = retry
@@ -268,7 +307,7 @@ def reply_for_chat(message: str, history: list[dict] | None = None) -> str:
 
     A second call, but a cheap one: the parser's detector catalog is not in
     scope here, so this is a ~60-token prompt plus a one-line answer. Camera
-    commands never reach this — the router composes those replies from the
+    commands never reach this - the router composes those replies from the
     detections, which is both faster and more honest than letting the model
     narrate an outcome it cannot see.
     """
@@ -277,21 +316,82 @@ def reply_for_chat(message: str, history: list[dict] | None = None) -> str:
     messages.extend(history or [])
     messages.append({"role": "user", "content": message})
     try:
-        resp = requests.post(f"{config.OLLAMA_HOST}/api/chat", timeout=60, json={
-            "model": model,
-            "messages": messages,
-            "stream": False,
-            "think": config.LLM_THINK,
-            "keep_alive": config.LLM_KEEP_ALIVE,
-            "options": {"temperature": 0.4, "num_predict": 60},
-        })
+        with _call_lock:
+            resp = requests.post(f"{config.OLLAMA_HOST}/api/chat",
+                                 timeout=config.LLM_TIMEOUT_S, json={
+                "model": model,
+                "messages": messages,
+                "stream": False,
+                "think": config.LLM_THINK,
+                "keep_alive": config.LLM_KEEP_ALIVE,
+                "options": {"temperature": 0.4, "num_predict": 60,
+                            "num_ctx": config.LLM_NUM_CTX},
+            })
         resp.raise_for_status()
         text = resp.json().get("message", {}).get("content", "").strip()
-        return text or "I'm here — tell me what to pick up."
+        return text or "I'm here - tell me what to pick up."
     except Exception as exc:
         log.warning("chat reply failed: %s", exc)
         return ("I can find objects with the camera and have the arm pick and "
                 "place them. Try: put the red block on the blue plate.")
+
+
+def _explain(exc: Exception) -> str:
+    """Turn a requests exception into something an operator can act on.
+
+    `500 Server Error for url: .../api/chat` is technically accurate and
+    completely useless. On this class of machine it means one thing often
+    enough to be worth naming: Ollama could not fit the model alongside
+    everything else that is resident.
+    """
+    resp = getattr(exc, "response", None)
+    if resp is None:
+        return (f"Ollama at {config.OLLAMA_HOST} did not answer: {exc}. "
+                f"Is `ollama serve` running?")
+
+    detail = ""
+    try:
+        detail = (resp.json().get("error") or "").strip()
+    except Exception:
+        detail = (resp.text or "").strip()[:200]
+
+    if resp.status_code >= 500:
+        return (f"Ollama returned {resp.status_code}"
+                + (f": {detail}" if detail else "")
+                + ". This is usually not enough free RAM to load the model - "
+                  "close what you can, or switch to a smaller tag with "
+                  "ARMGPT_LLM_MODELS.")
+    if resp.status_code == 404:
+        return (f"Ollama does not have that model loaded{': ' + detail if detail else ''}. "
+                f"Run: ollama pull {config.LLM_MODEL_PREFERENCES[0]}")
+    return f"Ollama request failed ({resp.status_code}){': ' + detail if detail else ''}."
+
+
+def _post_chat(payload: dict) -> requests.Response:
+    """POST /api/chat under the global lock, retrying once on a 5xx.
+
+    A 5xx from Ollama is usually transient memory pressure - the retry lands
+    after whatever was competing for RAM has been evicted, and it costs one
+    short pause rather than a failed command the operator has to retype.
+    Timeouts are NOT retried: the caller has already waited the full budget,
+    and a robot operator staring at a chat box deserves an answer more than a
+    second identical wait.
+    """
+    last: requests.RequestException | None = None
+    for attempt in range(2):
+        with _call_lock:
+            resp = requests.post(f"{config.OLLAMA_HOST}/api/chat", json=payload,
+                                 timeout=config.LLM_TIMEOUT_S)
+        try:
+            resp.raise_for_status()
+            return resp
+        except requests.HTTPError as exc:
+            last = exc
+            if resp.status_code < 500 or attempt == 1:
+                raise
+            log.warning("Ollama %s; retrying once in 2s", resp.status_code)
+            time.sleep(2)
+    raise last  # unreachable, but keeps the type checker honest
 
 
 def _call(model: str, messages: list[dict], schema: dict) -> dict:
@@ -304,24 +404,24 @@ def _call(model: str, messages: list[dict], schema: dict) -> dict:
         "keep_alive": config.LLM_KEEP_ALIVE,
         # num_predict caps a runaway; a valid intent is well under 200 tokens
         # and every token costs ~150ms on CPU.
-        "options": {"temperature": 0.1, "num_predict": 256},
+        "options": {"temperature": 0.1, "num_predict": 256,
+                    "num_ctx": config.LLM_NUM_CTX},
     }
 
     try:
-        resp = requests.post(f"{config.OLLAMA_HOST}/api/chat", json=payload,
-                             timeout=config.LLM_TIMEOUT_S)
-        resp.raise_for_status()
+        resp = _post_chat(payload)
     except requests.Timeout:
-        raise LLMError(f"{model} timed out after {config.LLM_TIMEOUT_S}s.")
+        raise LLMError(
+            f"{model} timed out after {config.LLM_TIMEOUT_S}s. If this was the "
+            f"first command since launch the model was probably still loading "
+            f"- try again, or raise ARMGPT_LLM_TIMEOUT.")
     except requests.RequestException as exc:
         # Older Ollama builds reject `think` on non-thinking models; retry once.
         if "think" in str(exc).lower():
             payload.pop("think")
-            resp = requests.post(f"{config.OLLAMA_HOST}/api/chat", json=payload,
-                                 timeout=config.LLM_TIMEOUT_S)
-            resp.raise_for_status()
+            resp = _post_chat(payload)
         else:
-            raise LLMError(f"Ollama request failed: {exc}")
+            raise LLMError(_explain(exc))
 
     content = resp.json().get("message", {}).get("content", "").strip()
     if not content:
@@ -357,14 +457,14 @@ def _repair_vocabulary(source, target, message: str) -> None:
     """Fix slots whose `match` the chosen detector could never return.
 
     The 4B reliably picks detector=objects for any object-shaped noun, even
-    ones outside COCO — "blue plate" becomes objects/plate, and YOLO has no
+    ones outside COCO - "blue plate" becomes objects/plate, and YOLO has no
     "plate" class, so that lookup is guaranteed to find nothing. Prompting
     against it (including an explicit "COLOUR WINS" rule) did not hold.
 
     So: if a slot names something YOLO cannot detect but the user's message
     mentions a colour, re-aim it at the colour detector. Colours are assigned
     in the order they appear, and a colour already taken by the other slot is
-    not reused — "place the red object on the blue plate" gives red to source
+    not reused - "place the red object on the blue plate" gives red to source
     and blue to target.
     """
     from detectors.color_detector import normalize_color
@@ -407,7 +507,7 @@ def _clean_slot(slot) -> dict | None:
 def _validate(intent: dict, message: str) -> dict:
     """Repair whatever the schema couldn't guarantee.
 
-    The schema pins types and enums, but it cannot enforce *relationships* —
+    The schema pins types and enums, but it cannot enforce *relationships* -
     that pick_place has both slots filled, or that a slot the model marked
     null isn't needed. Those get checked here rather than trusted.
     """
@@ -427,7 +527,7 @@ def _validate(intent: dict, message: str) -> dict:
     # question, before any slot-filling pressure.
     if needs_camera and action == "chat" and source is not None:
         # (The chat+source contradiction. The chat+null-source case can't be
-        # repaired here — parse_intent already retried with a grammar that
+        # repaired here - parse_intent already retried with a grammar that
         # can't emit "chat".)
         action = "pick_place" if target is not None else "locate"
     elif not needs_camera:
@@ -436,7 +536,7 @@ def _validate(intent: dict, message: str) -> dict:
         action = "chat"
         source = target = None
 
-    # A pick_place missing a slot is unexecutable — downgrade rather than
+    # A pick_place missing a slot is unexecutable - downgrade rather than
     # half-execute a motion command.
     if action == "pick_place" and (source is None or target is None):
         if source is not None:
@@ -461,7 +561,7 @@ def _validate(intent: dict, message: str) -> dict:
 def describe(slot: dict | None) -> str:
     """Human-readable name for a slot, built from detector+match.
 
-    Replaces the `description` field the model used to generate — same output,
+    Replaces the `description` field the model used to generate - same output,
     zero tokens.
     """
     if not slot:

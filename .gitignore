@@ -26,6 +26,9 @@ yolov8n.pt
 # ─── Local config / secrets ──────────────────────────────────────────
 .env
 .env.*
+# ...but the annotated template IS meant to be committed. (gitignore has no
+# trailing comments - a "# note" here would become part of the pattern.)
+!.env.example
 *.local
 
 # ─── Runtime + diagnostics ───────────────────────────────────────────

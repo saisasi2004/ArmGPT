@@ -2,7 +2,7 @@
 
 Doubles as the cell's soft safety check: `router` refuses to emit a motion
 command while a hand is in frame. That is a convenience interlock, NOT a
-safety-rated system — it must never be the only thing between a person and
+safety-rated system - it must never be the only thing between a person and
 the arm.
 """
 from __future__ import annotations

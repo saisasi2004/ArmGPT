@@ -1,4 +1,4 @@
-/* ArmGPT — light glassmorphism.
+/* ArmGPT - light glassmorphism.
    Frosted panels floating over an animated gradient mesh.
    Three columns: sessions | chat | live vision. Collapses to one on mobile. */
 
@@ -62,7 +62,7 @@ body {
   overflow: hidden;
 }
 
-/* animated gradient mesh — the thing the glass is frosting over.
+/* animated gradient mesh - the thing the glass is frosting over.
    Fixed + behind everything; blur() on huge radial blobs is cheap because
    they never repaint (transform-only animation). */
 body::before {
@@ -79,7 +79,7 @@ body::before {
   animation: drift 26s ease-in-out infinite alternate;
   will-change: transform;
 }
-/* Light wash to keep the mesh from going lurid. Deliberately weak — the
+/* Light wash to keep the mesh from going lurid. Deliberately weak - the
    panels do the real contrast work with their own translucent fill, so this
    only has to take the edge off the gaps between them. */
 body::after {
@@ -636,7 +636,7 @@ input.full { width: 100%; }
 .video-frame {
   position: relative; margin: 0 16px;
   aspect-ratio: 16 / 9;
-  /* the camera feed is the one genuinely dark surface — glass around it,
+  /* the camera feed is the one genuinely dark surface - glass around it,
      not over it, so the overlays keep their contrast */
   background: rgba(18, 22, 38, .9);
   border: 1px solid var(--stroke);
@@ -742,7 +742,7 @@ input[type=range]::-webkit-slider-thumb:hover {
   .suggestions { grid-template-columns: 1fr; }
 }
 
-/* Firefox has no backdrop-filter on some builds — fall back to more opaque
+/* Firefox has no backdrop-filter on some builds - fall back to more opaque
    panels so text never lands on the raw gradient. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   :root {

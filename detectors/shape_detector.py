@@ -49,7 +49,7 @@ class ShapeDetector(BaseDetector):
             return "hexagon"
         if circularity > 0.8:
             return "circle"
-        return None  # irregular blob — don't guess
+        return None  # irregular blob - don't guess
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)

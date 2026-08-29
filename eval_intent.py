@@ -9,7 +9,7 @@ and latency have to be read together on this hardware: a model that is 8/8 at
 on this call.
 
 The cases below are the ones that actually broke during development, not a
-generic benchmark. Add to them as you find new failures — that's the point.
+generic benchmark. Add to them as you find new failures - that's the point.
 """
 from __future__ import annotations
 

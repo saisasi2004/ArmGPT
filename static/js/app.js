@@ -1,4 +1,4 @@
-/* ArmGPT frontend. Vanilla — no build step, no CDN. */
+/* ArmGPT frontend. Vanilla - no build step, no CDN. */
 (() => {
   'use strict';
 
@@ -96,7 +96,7 @@
   const PILL_TEXT = {
     ok: 'executed',
     ambiguous: 'needs clarification',
-    blocked: 'blocked — hand detected',
+    blocked: 'blocked - hand detected',
     not_found: 'nothing found',
     error: 'error',
   };
@@ -116,7 +116,7 @@
       : 'ArmGPT';
     body.appendChild(role);
 
-    // Status pill — omitted for plain chat replies, which have no execution.
+    // Status pill - omitted for plain chat replies, which have no execution.
     const isChat = result.intent && result.intent.action === 'chat';
     if (result.status && !(result.status === 'ok' && isChat)) {
       const pill = document.createElement('span');
@@ -232,7 +232,7 @@
       if (!persistent) {
         el.sessionList.innerHTML =
           '<div class="empty-hint">MongoDB isn\'t reachable, so history isn\'t ' +
-          'being saved. Chat still works — this session just won\'t persist.</div>';
+          'being saved. Chat still works - this session just won\'t persist.</div>';
         return;
       }
       if (!sessions.length) {
@@ -266,7 +266,7 @@
         if (s.id === sessionId) el.chatTitle.textContent = s.title;
       }
     } catch (_) {
-      /* sidebar is non-critical — never break chat over it */
+      /* sidebar is non-critical - never break chat over it */
     }
   }
 
@@ -285,7 +285,7 @@
           intent: m.meta?.intent,
           detections: m.meta?.detections,
           robot: m.meta?.robot,
-          // Snapshots aren't persisted — a base64 JPEG per turn would bloat
+          // Snapshots aren't persisted - a base64 JPEG per turn would bloat
           // the collection fast, and the frame is stale on replay anyway.
         });
       }
@@ -351,9 +351,13 @@
   const camSource = $('cameraSource');
   const camNote = $('cameraNote');
 
-  async function loadCameras() {
+  // `force` is the rescan button. A scan has to take each device to test it,
+  // including the one on screen, so the feed stutters for a few seconds - fine
+  // when asked for, not something to do on page load.
+  async function loadCameras(force = false) {
     try {
-      const { active, devices } = await api('/api/camera/devices');
+      const { active, devices } = await api(
+        '/api/camera/devices' + (force ? '?refresh=1' : ''));
       camSource.innerHTML = '';
       if (!devices.length) {
         camSource.innerHTML = '<option value="">No cameras found</option>';
@@ -363,8 +367,8 @@
         const opt = document.createElement('option');
         opt.value = d.index;
         opt.textContent = `Camera ${d.index}`
-          + (d.dark ? ' (no image — depth/IR?)' : '')
-          + (d.active ? ' — active' : '');
+          + (d.dark ? ' (no image - depth/IR?)' : '')
+          + (d.active ? ' - active' : '');
         if (d.index === active) opt.selected = true;
         camSource.appendChild(opt);
       }
@@ -397,7 +401,29 @@
     }
   });
 
-  $('refreshCams').addEventListener('click', loadCameras);
+  $('refreshCams').addEventListener('click', async () => {
+    camNote.classList.remove('error');
+    camNote.textContent = 'Scanning for cameras — the feed pauses briefly…';
+    await loadCameras(true);
+    camNote.textContent = 'Scan complete.';
+    el.videoFeed.src = '/video_feed?t=' + Date.now();
+  });
+
+  $('retryCam').addEventListener('click', async () => {
+    camNote.classList.remove('error');
+    camNote.textContent = 'Reconnecting…';
+    try {
+      await api('/api/camera/retry', { method: 'POST' });
+      setTimeout(() => {
+        el.videoFeed.src = '/video_feed?t=' + Date.now();
+        camNote.textContent = 'Reconnect requested.';
+        pollStatus();
+      }, 1500);
+    } catch (err) {
+      camNote.textContent = err.message;
+      camNote.classList.add('error');
+    }
+  });
 
   el.previewMode.addEventListener('change', async () => {
     const mode = el.previewMode.value;
@@ -530,7 +556,7 @@
   function paintDryRun() {
     const dry = rb.dryRun.checked;
     const server = isServer();
-    rb.dryRunTitle.textContent = dry ? 'Dry run' : 'Live — sending coordinates';
+    rb.dryRunTitle.textContent = dry ? 'Dry run' : 'Live - sending coordinates';
     rb.dryRunSub.textContent = dry
       ? 'Commands are formatted and logged, never sent.'
       : (server ? 'Commands are broadcast to every connected client.'
@@ -549,7 +575,7 @@
     rb.connNote.textContent = server
       ? 'ArmGPT is listening. Point Hercules (TCP Client) at this address and '
         + 'hit Connect, then send a command below.'
-      : 'Test opens a socket and closes it — it sends no data, so it can\'t '
+      : 'Test opens a socket and closes it - it sends no data, so it can\'t '
         + 'move the arm.';
     paintDryRun();
   }
@@ -566,7 +592,7 @@
       return;
     }
     rb.log.innerHTML = '';
-    // newest first — the thing you just did is the thing you want to see
+    // newest first - the thing you just did is the thing you want to see
     for (const h of [...history].reverse()) {
       const cls = h.error ? 'failed' : (h.dry_run ? 'dry' : 'sent');
       const tag = h.error ? 'fail' : (h.dry_run ? 'dry' : 'sent');
@@ -645,8 +671,8 @@
         method: 'POST', body: JSON.stringify({ mode: rb.mode.value }),
       });
       rb.connNote.textContent = isServer()
-        ? `Server mode — listening on ${rb.host.value}:${rb.port.value}.`
-        : `Client mode — will dial out to ${rb.host.value}:${rb.port.value}.`;
+        ? `Server mode - listening on ${rb.host.value}:${rb.port.value}.`
+        : `Client mode - will dial out to ${rb.host.value}:${rb.port.value}.`;
       pollStatus();
     } catch (err) {
       rb.connNote.textContent = err.message;
@@ -685,8 +711,8 @@
       });
       rb.connNote.classList.remove('error');
       rb.connNote.textContent = isServer()
-        ? `Saved — now listening on ${rb.host.value}:${rb.port.value}.`
-        : `Saved — ${rb.host.value}:${rb.port.value}.`;
+        ? `Saved - now listening on ${rb.host.value}:${rb.port.value}.`
+        : `Saved - ${rb.host.value}:${rb.port.value}.`;
       pollStatus();
     } catch (err) {
       rb.connNote.textContent = err.message;
@@ -712,7 +738,7 @@
         if (r.ok) {
           const n = r.clients || 0;
           setBanner(n > 0 ? 'ok' : 'warn',
-            `Listening on ${r.host}:${r.port} — ${n} client${n === 1 ? '' : 's'}`);
+            `Listening on ${r.host}:${r.port} - ${n} client${n === 1 ? '' : 's'}`);
           rb.connNote.textContent = n > 0
             ? 'A client is connected and ready to receive commands.'
             : 'Listening, but no client yet. Connect Hercules to this address.';
@@ -742,13 +768,13 @@
   rb.manualSend.addEventListener('click', async () => {
     const line = rb.manualLine.value.trim();
     if (!line) return;
-    // Live mode moves real hardware from a hand-typed string — make the user
+    // Live mode moves real hardware from a hand-typed string - make the user
     // say yes first. Dry run sends nothing, so it goes straight through.
     const dest = isServer() ? 'connected client(s)'
                             : `${rb.host.value}:${rb.port.value}`;
     if (!rb.dryRun.checked &&
         !confirm(`Send "${line}" to ${dest}?\n\n` +
-                 `Dry run is OFF — this will move the arm.`)) {
+                 `Dry run is OFF - this will move the arm.`)) {
       return;
     }
     rb.manualSend.disabled = true;
@@ -759,7 +785,7 @@
       });
       let msg;
       if (r.error) msg = r.error;
-      else if (r.dry_run) msg = 'Dry run — formatted but not sent.';
+      else if (r.dry_run) msg = 'Dry run - formatted but not sent.';
       else if (r.mode === 'server')
         msg = `Broadcast to ${r.clients} client${r.clients === 1 ? '' : 's'} in ${r.ms}ms.`;
       else msg = `Sent in ${r.ms}ms.` + (r.reply ? ` Reply: ${r.reply}` : '');
@@ -816,60 +842,86 @@
         setDot('llm', 'error');
       }
 
-      // camera
-      if (s.camera.running && s.camera.has_frame) {
-        $('statusCamera').textContent = `index ${s.camera.index}`;
+      // camera. Reconnecting is its own state: the feed is down but the app is
+      // actively retrying, so it's a warning, not an error the user must act on.
+      const cam = s.camera;
+      if (cam.running && cam.has_frame && !cam.reconnecting && cam.dark) {
+        // A live stream of black frames. Not an error, but reporting it as
+        // healthy is worse than useless — the arm would be looking at nothing.
+        $('statusCamera').textContent = `index ${cam.index} — no image`;
+        $('statusCamera').title =
+          'The camera is streaming, but every frame is black. It may be a '
+          + 'depth/IR sensor, a covered lens, or a device another app is holding.';
+        setDot('camera', 'warn');
+        el.videoFrame.classList.add('live');
+      } else if (cam.running && cam.has_frame && !cam.reconnecting) {
+        $('statusCamera').textContent = `index ${cam.index}`;
+        $('statusCamera').title = '';
         setDot('camera', 'ok');
         el.videoFrame.classList.add('live');
+      } else if (cam.reconnecting) {
+        $('statusCamera').textContent = 'reconnecting…';
+        $('statusCamera').title = cam.error || '';
+        setDot('camera', 'warn');
+        el.videoFrame.classList.remove('live');
+        el.videoFallback.textContent =
+          `Lost camera ${cam.index}. Retrying — free the device and it will come back.`;
       } else {
-        $('statusCamera').textContent = s.camera.error ? 'error' : 'starting…';
-        $('statusCamera').title = s.camera.error || '';
-        setDot('camera', s.camera.error ? 'error' : 'warn');
-        el.videoFallback.textContent = s.camera.error || 'Connecting to camera…';
+        $('statusCamera').textContent = cam.error ? 'error' : 'starting…';
+        $('statusCamera').title = cam.error || '';
+        setDot('camera', cam.error ? 'error' : 'warn');
+        el.videoFrame.classList.remove('live');
+        el.videoFallback.textContent = cam.error || 'Connecting to camera…';
       }
+      $('retryCam').hidden = !(cam.error || cam.reconnecting || cam.dark);
 
-      // robot — same signal drives the sidebar row, the tab dot and the banner
+      // robot - same signal drives the sidebar row, the tab dot and the banner
       const r = s.robot;
       const server = r.mode === 'server';
       if (r.dry_run) {
         $('statusRobot').textContent = server ? 'dry run (server)' : 'dry run';
-        $('statusRobot').title = 'Dry run — commands are formatted but not sent';
+        $('statusRobot').title = 'Dry run - commands are formatted but not sent';
         setDot('robot', 'warn');
         setBanner('warn', server
-          ? `Dry run — would broadcast on ${r.host}:${r.port}`
-          : `Dry run — ${r.host}:${r.port} not contacted`);
+          ? `Dry run - would broadcast on ${r.host}:${r.port}`
+          : `Dry run - ${r.host}:${r.port} not contacted`);
       } else if (server) {
         const n = r.clients || 0;
         if (!r.listening) {
           $('statusRobot').textContent = 'bind failed';
           $('statusRobot').title = r.error || '';
           setDot('robot', 'error');
-          setBanner('error', `Not listening — ${r.error || r.host + ':' + r.port}`);
+          setBanner('error', `Not listening - ${r.error || r.host + ':' + r.port}`);
         } else if (n > 0) {
           $('statusRobot').textContent = `${n} client${n === 1 ? '' : 's'}`;
           setDot('robot', 'ok');
-          setBanner('ok', `Listening on ${r.host}:${r.port} — ${n} client${n === 1 ? '' : 's'}`);
+          setBanner('ok', `Listening on ${r.host}:${r.port} - ${n} client${n === 1 ? '' : 's'}`);
         } else {
           $('statusRobot').textContent = 'listening';
           $('statusRobot').title = `Listening on ${r.host}:${r.port}, no client yet`;
           setDot('robot', 'warn');
-          setBanner('warn', `Listening on ${r.host}:${r.port} — no client yet`);
+          setBanner('warn', `Listening on ${r.host}:${r.port} - no client yet`);
         }
         // keep the client list live while the tab is open
         if (!$('pane-robot').hidden) renderClients(r.client_addrs);
       } else if (r.reachable) {
         $('statusRobot').textContent = `${r.host}:${r.port}`;
         setDot('robot', 'ok');
-        setBanner('ok', `Connected — ${r.host}:${r.port}`);
+        setBanner('ok', `Connected - ${r.host}:${r.port}`);
       } else {
         $('statusRobot').textContent = 'unreachable';
         $('statusRobot').title = `${r.host}:${r.port} not accepting connections`;
         setDot('robot', 'error');
-        setBanner('error', `Unreachable — ${r.host}:${r.port}`);
+        setBanner('error', `Unreachable - ${r.host}:${r.port}`);
       }
 
-      // history
-      $('statusMongo').textContent = s.mongo.available ? s.mongo.db : 'off';
+      // history. "off" was misleading - without Mongo the chat still works and
+      // still remembers, it just forgets when the server stops.
+      $('statusMongo').textContent = s.mongo.available ? s.mongo.db : 'in memory';
+      $('statusMongo').title = s.mongo.available
+        ? `Persisted to ${s.mongo.uri}/${s.mongo.db}`
+        : `MongoDB not in use (${s.mongo.reason || 'unreachable'}). `
+          + 'History is kept in memory and lost when the server stops.';
       setDot('mongo', s.mongo.available ? 'ok' : 'warn');
 
       el.hintText.textContent = s.safety_check

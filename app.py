@@ -1,4 +1,4 @@
-"""ArmGPT — Flask entry point.
+"""ArmGPT - Flask entry point.
 
     python app.py            # http://127.0.0.1:5050
 
@@ -56,8 +56,15 @@ def chat():
     result = router.handle(message, session_id)
     result["session_id"] = session_id
     result["elapsed_ms"] = round((time.perf_counter() - started) * 1000)
-    log.info("[%s] %r -> %s in %dms", session_id, message, result["status"],
-             result["elapsed_ms"])
+    # Log the reply on a failure. "-> error in 122029ms" tells you something
+    # broke but not what, and the reply text is exactly the diagnosis the user
+    # is already reading on screen.
+    if result["status"] == "error":
+        log.warning("[%s] %r -> error in %dms: %s", session_id, message,
+                    result["elapsed_ms"], result["reply"])
+    else:
+        log.info("[%s] %r -> %s in %dms", session_id, message,
+                 result["status"], result["elapsed_ms"])
     return jsonify(result)
 
 
@@ -139,7 +146,7 @@ class _PreviewBroadcaster:
     leave the previous request hanging on reload, and if every orphan kept
     encoding JPEGs (plus a full detector pass) they'd pile up and starve the
     CPU-bound LLM. This keeps that guarantee while allowing many *live* viewers
-    — the work is done once here and shared, so N browsers cost the same as one.
+    - the work is done once here and shared, so N browsers cost the same as one.
 
     The producer thread runs only while at least one viewer is connected; the
     last one to leave stops it, so an idle page loads no torch and burns no
@@ -191,7 +198,7 @@ class _PreviewBroadcaster:
                 continue
 
             # Don't re-run detection on a frame the capture thread hasn't
-            # refreshed yet — pure waste on the same cores the LLM wants.
+            # refreshed yet - pure waste on the same cores the LLM wants.
             fid = camera.frame_id()
             if fid == last_frame_id:
                 time.sleep(0.005)
@@ -208,7 +215,7 @@ class _PreviewBroadcaster:
                             draw_detection(frame, det, detector.BOX_COLOR)
                         detector.annotate_extra(frame)
                 except Exception:
-                    # Never kill the feed over a detector fault — the raw feed
+                    # Never kill the feed over a detector fault - the raw feed
                     # is more useful than a dead <img>.
                     log.exception("preview detector %s failed", mode)
 
@@ -230,10 +237,23 @@ _preview = _PreviewBroadcaster()
 
 @app.get("/api/camera/devices")
 def camera_devices():
-    """List switchable camera indices. Probing releases each device, so this
-    is safe to call while the preview is streaming the active one."""
-    return jsonify({"active": camera.status()["index"],
-                    "devices": camera.list_devices()})
+    """List switchable camera indices.
+
+    Served from a cache by default. `?refresh=1` (the UI's rescan button)
+    forces a fresh probe, which briefly interrupts the live feed - a scan has
+    to take the device to test it, so this is not something to do on a timer.
+    """
+    refresh = request.args.get("refresh") in ("1", "true", "yes")
+    devices = camera.list_devices(refresh=refresh)
+    return jsonify({"active": camera.status()["index"], "devices": devices})
+
+
+@app.post("/api/camera/retry")
+def camera_retry():
+    """Reconnect to the current camera now, instead of waiting out the
+    backoff. What the UI's retry button calls after you free the device."""
+    camera.retry()
+    return jsonify({"ok": True, "index": camera.status()["index"]})
 
 
 @app.post("/api/camera/switch")
@@ -263,7 +283,7 @@ def _mjpeg():
         last_seq = 0
         while True:
             last_seq, jpeg = _preview.wait(last_seq)
-            if jpeg is None:          # timed out with no new frame — keep waiting
+            if jpeg is None:          # timed out with no new frame - keep waiting
                 continue
             yield boundary + jpeg + b"\r\n"
     finally:
@@ -300,7 +320,7 @@ def set_robot_config():
 
 @app.post("/api/robot/test")
 def robot_test():
-    """Connect and disconnect. Sends no bytes — cannot move the arm."""
+    """Connect and disconnect. Sends no bytes - cannot move the arm."""
     data = request.get_json(silent=True) or {}
     return jsonify(robot.test_connection(host=data.get("host"),
                                          port=data.get("port")))
@@ -352,27 +372,45 @@ def status():
         "llm": llm.status(),
         "camera": camera.status(),
         "robot": robot.status(),
-        "mongo": {"available": store.available(), "uri": config.MONGO_URI,
+        "mongo": {"available": store.available(), "backend": store.backend(),
+                  "reason": store.reason(), "uri": config.MONGO_URI,
                   "db": config.MONGO_DB},
         "safety_check": config.SAFETY_CHECK,
     })
 
 
+def _shutdown() -> None:
+    """Release the camera and the listening socket on the way out, so a
+    restart doesn't find its own device or port still held."""
+    try:
+        camera.stop()
+    except Exception:
+        pass
+    try:
+        robot.shutdown()
+    except Exception:
+        pass
+
+
 def main() -> None:
+    import atexit
+    import os
+
+    atexit.register(_shutdown)
+
     store.init()
-    robot.load_persisted()  # after store.init(): it reads from Mongo
+    robot.load_persisted()  # after store.init(): it reads from the store
     robot.apply_mode()      # start the TCP server now if mode == server
 
     # A camera index picked in the UI last time wins over the config default,
     # unless an explicit env var is set. Windows may have renumbered the
     # devices since, but the saved index is still a better guess than the
     # hardcoded default, and the UI picker is one click away either way.
-    import os
     if "ARMGPT_CAMERA_INDEX" not in os.environ:
         saved = store.load_setting("camera")
         if saved and "index" in saved:
-            camera._index = int(saved["index"])
-            log.info("restored camera index %s", camera._index)
+            camera.set_index(int(saved["index"]))
+            log.info("restored camera index %s", saved["index"])
 
     camera.start()
     try:

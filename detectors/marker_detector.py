@@ -1,6 +1,6 @@
 """Fiducial marker + QR/barcode detection.
 
-The most reliable localization source in the cell — an ArUco tag beats natural
+The most reliable localization source in the cell - an ArUco tag beats natural
 object detection every time, so "pick up marker 3" is the highest-confidence
 command this system can serve.
 """
@@ -62,7 +62,7 @@ class MarkerDetector(BaseDetector):
         if not match:
             return True
         m = match.lower().strip()
-        # "3" must match "ArUco 3" but not "ArUco 13" — compare the id token.
+        # "3" must match "ArUco 3" but not "ArUco 13" - compare the id token.
         if m.isdigit() and det.label.lower().startswith("aruco"):
             return det.label.split()[-1] == m
         return m in det.label.lower()

@@ -38,6 +38,7 @@ Everything runs on your own machine. No paid APIs, no cloud.
 - [Troubleshooting](#troubleshooting)
 - [Project structure](#project-structure)
 - [Roadmap & known gaps](#roadmap--known-gaps)
+- [DEMO Image](#demo-image)
 - [Contributing](#contributing)
 - [Acknowledgements](#acknowledgements)
 - [License](#license)
@@ -488,6 +489,12 @@ eval_intent.py          offline accuracy/latency benchmark for the parser
   air-gapped, vendor the icon library locally so glyphs still render.
 - **No automated tests.** `eval_intent.py` covers the parser and detectors can
   be run standalone, but there is no suite. Contributions welcome.
+
+## DEMO Image
+
+Here is the DEMO Picture of ArmGPT.
+
+![DEMO Picture](DEMO.png)
 
 ## Contributing
 
